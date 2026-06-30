@@ -1,0 +1,11 @@
+aws_region           = "us-east-1"
+key_name             = "rancher0529"
+ssh_private_key_path = "~/.ssh/rancher0529.pem"
+
+# Restrict these to your trusted public IP/CIDR before production use.
+ssh_allowed_cidr     = "0.0.0.0/0"
+service_allowed_cidr = "0.0.0.0/0"
+
+nexus_instance_type        = "m7i-flex.large"
+sonarqube_instance_type    = "m7i-flex.large"
+tomcat_maven_instance_type = "m7i-flex.large"

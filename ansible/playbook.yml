@@ -1,0 +1,48 @@
+---
+- name: Bootstrap Ansible remote temporary directories
+  hosts: devops_tools
+  become: false
+  gather_facts: false
+  tasks:
+    - name: Create Ansible temp directory for SSH user before module execution
+      ansible.builtin.raw: |
+        set -eu
+        ANSIBLE_LOGIN_USER="{{ ansible_user | default('ubuntu') }}"
+        USER_HOME="$(getent passwd "$ANSIBLE_LOGIN_USER" | cut -d: -f6)"
+        if [ -z "$USER_HOME" ]; then
+          USER_HOME="/home/$ANSIBLE_LOGIN_USER"
+        fi
+        sudo mkdir -p "$USER_HOME/.ansible/tmp"
+        sudo chown -R "$ANSIBLE_LOGIN_USER:$ANSIBLE_LOGIN_USER" "$USER_HOME/.ansible"
+        sudo chmod 700 "$USER_HOME/.ansible" "$USER_HOME/.ansible/tmp"
+        sudo rm -rf /tmp/.ansible /tmp/ansible-ubuntu || true
+        mkdir -p "$USER_HOME/.ansible/tmp"
+      changed_when: false
+
+- name: Prepare all DevOps tool servers
+  hosts: devops_tools
+  become: true
+  gather_facts: true
+  roles:
+    - common
+
+- name: Install and configure Sonatype Nexus Repository
+  hosts: nexus
+  become: true
+  gather_facts: true
+  roles:
+    - nexus
+
+- name: Install and configure SonarQube
+  hosts: sonarqube
+  become: true
+  gather_facts: true
+  roles:
+    - sonarqube
+
+- name: Install and configure Tomcat and Maven
+  hosts: tomcat_maven
+  become: true
+  gather_facts: true
+  roles:
+    - tomcat_maven

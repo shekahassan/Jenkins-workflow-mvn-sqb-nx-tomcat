@@ -1,0 +1,17 @@
+---
+tomcat_package: tomcat10
+tomcat_admin_package: tomcat10-admin
+tomcat_service_name: tomcat10
+tomcat_port: 8080
+tomcat_user_file: /etc/tomcat10/tomcat-users.xml
+tomcat_admin_user: admin
+tomcat_admin_password: "admin123"
+tomcat_script_user: deployer
+tomcat_script_password: "ChangeMeTomcatDeploy123!"
+maven_package: maven
+tomcat_root_webapp_dir: /var/lib/tomcat10/webapps/ROOT
+tomcat_manager_context_paths:
+  - /usr/share/tomcat10-admin/manager/META-INF/context.xml
+  - /usr/share/tomcat10-admin/host-manager/META-INF/context.xml
+  - /var/lib/tomcat10/webapps/manager/META-INF/context.xml
+  - /var/lib/tomcat10/webapps/host-manager/META-INF/context.xml

@@ -1,0 +1,143 @@
+---
+- name: Create Nexus group
+  ansible.builtin.group:
+    name: "{{ nexus_group }}"
+    system: true
+
+- name: Create Nexus user
+  ansible.builtin.user:
+    name: "{{ nexus_user }}"
+    group: "{{ nexus_group }}"
+    home: "{{ nexus_work_dir }}"
+    shell: /usr/sbin/nologin
+    system: true
+    create_home: false
+
+- name: Ensure Nexus installation parent directory exists
+  ansible.builtin.file:
+    path: "{{ nexus_install_parent }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Ensure Nexus work directory exists
+  ansible.builtin.file:
+    path: "{{ nexus_work_dir }}"
+    state: directory
+    owner: "{{ nexus_user }}"
+    group: "{{ nexus_group }}"
+    mode: "0755"
+
+- name: Download Nexus Repository archive
+  ansible.builtin.get_url:
+    url: "{{ nexus_download_url }}"
+    dest: "/tmp/nexus-{{ nexus_version }}.tar.gz"
+    mode: "0644"
+    timeout: 60
+
+- name: Extract Nexus archive
+  ansible.builtin.unarchive:
+    src: "/tmp/nexus-{{ nexus_version }}.tar.gz"
+    dest: "{{ nexus_install_parent }}"
+    remote_src: true
+    creates: "{{ nexus_install_parent }}/nexus-{{ nexus_version }}"
+
+- name: Locate extracted Nexus directory
+  ansible.builtin.find:
+    paths: "{{ nexus_install_parent }}"
+    patterns: "nexus-*"
+    file_type: directory
+  register: nexus_extracted_dirs
+
+- name: Fail when Nexus archive did not extract correctly
+  ansible.builtin.fail:
+    msg: "No extracted Nexus directory found under {{ nexus_install_parent }}."
+  when: nexus_extracted_dirs.files | length == 0
+
+- name: Set Nexus extracted directory fact
+  ansible.builtin.set_fact:
+    nexus_extracted_dir: "{{ (nexus_extracted_dirs.files | sort(attribute='path') | last).path }}"
+
+- name: Link active Nexus install directory
+  ansible.builtin.file:
+    src: "{{ nexus_extracted_dir }}"
+    dest: "{{ nexus_install_dir }}"
+    state: link
+    force: true
+
+- name: Set Nexus ownership
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: "{{ nexus_user }}"
+    group: "{{ nexus_group }}"
+    recurse: true
+  loop:
+    - "{{ nexus_extracted_dir }}"
+    - "{{ nexus_work_dir }}"
+
+- name: Configure Nexus run user
+  ansible.builtin.copy:
+    dest: "{{ nexus_install_dir }}/bin/nexus.rc"
+    owner: "{{ nexus_user }}"
+    group: "{{ nexus_group }}"
+    mode: "0644"
+    content: |
+      run_as_user="{{ nexus_user }}"
+  notify: Restart Nexus
+
+- name: Configure Nexus port
+  ansible.builtin.lineinfile:
+    path: "{{ nexus_install_dir }}/etc/nexus-default.properties"
+    regexp: "^application-port="
+    line: "application-port={{ nexus_port }}"
+    owner: "{{ nexus_user }}"
+    group: "{{ nexus_group }}"
+  notify: Restart Nexus
+
+- name: Configure Nexus JVM heap
+  ansible.builtin.replace:
+    path: "{{ nexus_install_dir }}/bin/nexus.vmoptions"
+    regexp: "{{ item.regexp }}"
+    replace: "{{ item.replace }}"
+  loop:
+    - regexp: "^-Xms.*"
+      replace: "-Xms{{ nexus_min_heap }}"
+    - regexp: "^-Xmx.*"
+      replace: "-Xmx{{ nexus_max_heap }}"
+  notify: Restart Nexus
+
+- name: Install Nexus systemd unit
+  ansible.builtin.template:
+    src: nexus.service.j2
+    dest: "/etc/systemd/system/{{ nexus_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Nexus
+
+- name: Enable and start Nexus
+  ansible.builtin.systemd:
+    name: "{{ nexus_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for Nexus HTTP endpoint
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ nexus_port }}"
+    status_code:
+      - 200
+      - 302
+      - 401
+    timeout: 10
+  register: nexus_health
+  retries: "{{ service_wait_retries }}"
+  delay: "{{ service_wait_delay }}"
+  until: nexus_health.status in [200, 302, 401]
+
+- name: Show Nexus access details
+  ansible.builtin.debug:
+    msg:
+      - "Nexus URL: {{ service_url | default('http://' ~ ansible_host ~ ':' ~ nexus_port) }}"
+      - "Initial admin password path: {{ nexus_work_dir }}/nexus3/admin.password"

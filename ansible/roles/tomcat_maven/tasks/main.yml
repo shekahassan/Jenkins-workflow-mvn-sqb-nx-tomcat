@@ -1,0 +1,103 @@
+---
+- name: Install Tomcat and Maven packages
+  ansible.builtin.apt:
+    name:
+      - "{{ tomcat_package }}"
+      - "{{ tomcat_admin_package }}"
+      - "{{ maven_package }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Configure Tomcat manager user
+  ansible.builtin.template:
+    src: tomcat-users.xml.j2
+    dest: "{{ tomcat_user_file }}"
+    owner: root
+    group: tomcat
+    mode: "0640"
+  no_log: true
+  notify: Restart Tomcat
+
+- name: Check Tomcat manager context files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ tomcat_manager_context_paths }}"
+  register: tomcat_manager_context_stats
+
+- name: Allow remote Tomcat manager login
+  ansible.builtin.template:
+    src: manager-context.xml.j2
+    dest: "{{ item.stat.path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ tomcat_manager_context_stats.results }}"
+  when: item.stat.exists
+  notify: Restart Tomcat
+
+- name: Ensure Tomcat ROOT webapp exists
+  ansible.builtin.file:
+    path: "{{ tomcat_root_webapp_dir }}"
+    state: directory
+    owner: tomcat
+    group: tomcat
+    mode: "0755"
+
+- name: Install Tomcat landing page
+  ansible.builtin.template:
+    src: index.html.j2
+    dest: "{{ tomcat_root_webapp_dir }}/index.html"
+    owner: tomcat
+    group: tomcat
+    mode: "0644"
+  notify: Restart Tomcat
+
+- name: Enable and start Tomcat
+  ansible.builtin.systemd:
+    name: "{{ tomcat_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Verify Maven installation
+  ansible.builtin.command:
+    cmd: mvn -version
+  register: maven_version
+  changed_when: false
+
+- name: Wait for Tomcat HTTP endpoint
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ tomcat_port }}"
+    status_code:
+      - 200
+      - 302
+      - 401
+    timeout: 10
+  register: tomcat_health
+  retries: "{{ service_wait_retries }}"
+  delay: "{{ service_wait_delay }}"
+  until: tomcat_health.status in [200, 302, 401]
+
+- name: Verify Tomcat Manager login from localhost
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ tomcat_port }}/manager/html"
+    user: "{{ tomcat_admin_user }}"
+    password: "{{ tomcat_admin_password }}"
+    force_basic_auth: true
+    status_code:
+      - 200
+    timeout: 10
+  register: tomcat_manager_login
+  retries: "{{ service_wait_retries }}"
+  delay: "{{ service_wait_delay }}"
+  until: tomcat_manager_login.status == 200
+  no_log: true
+
+- name: Show Tomcat and Maven access details
+  ansible.builtin.debug:
+    msg:
+      - "Tomcat Manager URL: {{ service_url | default('http://' ~ ansible_host ~ ':' ~ tomcat_port) }}/manager/html"
+      - "Tomcat Manager GUI user: {{ tomcat_admin_user }}"
+      - "Tomcat Manager script user: {{ tomcat_script_user }}"
+      - "{{ maven_version.stdout_lines[0] | default('Maven installed') }}"

@@ -1,0 +1,17 @@
+[Unit]
+Description=SonarQube service
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ sonarqube_user }}
+Group={{ sonarqube_group }}
+LimitNOFILE=131072
+LimitNPROC=8192
+ExecStart={{ sonarqube_current_link }}/bin/linux-x86-64/sonar.sh console
+Restart=on-failure
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

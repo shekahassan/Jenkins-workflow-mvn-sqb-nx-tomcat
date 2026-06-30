@@ -1,0 +1,170 @@
+---
+- name: Install SonarQube required packages
+  ansible.builtin.apt:
+    name:
+      - postgresql
+      - postgresql-contrib
+      - unzip
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Configure SonarQube kernel settings
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/99-sonarqube.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      vm.max_map_count=524288
+      fs.file-max=131072
+  register: sonarqube_sysctl_config
+
+- name: Apply SonarQube kernel settings
+  ansible.builtin.command:
+    cmd: sysctl --system
+  when: sonarqube_sysctl_config.changed
+
+- name: Configure SonarQube security limits
+  ansible.builtin.copy:
+    dest: /etc/security/limits.d/99-sonarqube.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      {{ sonarqube_user }}   -   nofile   131072
+      {{ sonarqube_user }}   -   nproc    8192
+  notify: Restart SonarQube
+
+- name: Enable and start PostgreSQL
+  ansible.builtin.systemd:
+    name: postgresql
+    enabled: true
+    state: started
+
+- name: Check SonarQube PostgreSQL role
+  ansible.builtin.command:
+    cmd: "psql -tAc \"SELECT 1 FROM pg_roles WHERE rolname='{{ sonarqube_db_user }}'\""
+  become_user: postgres
+  register: sonar_db_role
+  changed_when: false
+
+- name: Create SonarQube PostgreSQL role
+  ansible.builtin.command:
+    cmd: "psql -c \"CREATE USER {{ sonarqube_db_user }} WITH ENCRYPTED PASSWORD '{{ sonarqube_db_password }}'\""
+  become_user: postgres
+  when: "'1' not in sonar_db_role.stdout"
+  no_log: true
+
+- name: Check SonarQube PostgreSQL database
+  ansible.builtin.command:
+    cmd: "psql -tAc \"SELECT 1 FROM pg_database WHERE datname='{{ sonarqube_db_name }}'\""
+  become_user: postgres
+  register: sonar_db
+  changed_when: false
+
+- name: Create SonarQube PostgreSQL database
+  ansible.builtin.command:
+    cmd: "createdb -O {{ sonarqube_db_user }} {{ sonarqube_db_name }}"
+  become_user: postgres
+  when: "'1' not in sonar_db.stdout"
+
+- name: Create SonarQube group
+  ansible.builtin.group:
+    name: "{{ sonarqube_group }}"
+    system: true
+
+- name: Create SonarQube user
+  ansible.builtin.user:
+    name: "{{ sonarqube_user }}"
+    group: "{{ sonarqube_group }}"
+    home: /var/sonarqube
+    shell: /usr/sbin/nologin
+    system: true
+    create_home: false
+
+- name: Create SonarQube data directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ sonarqube_user }}"
+    group: "{{ sonarqube_group }}"
+    mode: "0755"
+  loop:
+    - /var/sonarqube
+    - /var/sonarqube/data
+    - /var/sonarqube/temp
+    - /var/log/sonarqube
+
+- name: Download SonarQube archive
+  ansible.builtin.get_url:
+    url: "{{ sonarqube_download_url }}"
+    dest: "/tmp/sonarqube-{{ sonarqube_version }}.zip"
+    mode: "0644"
+    timeout: 60
+
+- name: Extract SonarQube
+  ansible.builtin.unarchive:
+    src: "/tmp/sonarqube-{{ sonarqube_version }}.zip"
+    dest: "{{ sonarqube_install_parent }}"
+    remote_src: true
+    creates: "{{ sonarqube_install_dir }}"
+
+- name: Set SonarQube installation ownership
+  ansible.builtin.file:
+    path: "{{ sonarqube_install_dir }}"
+    owner: "{{ sonarqube_user }}"
+    group: "{{ sonarqube_group }}"
+    recurse: true
+
+- name: Link active SonarQube install directory
+  ansible.builtin.file:
+    src: "{{ sonarqube_install_dir }}"
+    dest: "{{ sonarqube_current_link }}"
+    state: link
+    force: true
+
+- name: Configure SonarQube properties
+  ansible.builtin.template:
+    src: sonar.properties.j2
+    dest: "{{ sonarqube_current_link }}/conf/sonar.properties"
+    owner: "{{ sonarqube_user }}"
+    group: "{{ sonarqube_group }}"
+    mode: "0600"
+  no_log: true
+  notify: Restart SonarQube
+
+- name: Install SonarQube systemd unit
+  ansible.builtin.template:
+    src: sonarqube.service.j2
+    dest: "/etc/systemd/system/{{ sonarqube_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart SonarQube
+
+- name: Enable and start SonarQube
+  ansible.builtin.systemd:
+    name: "{{ sonarqube_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for SonarQube HTTP endpoint
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ sonarqube_port }}"
+    status_code:
+      - 200
+      - 302
+      - 401
+    timeout: 10
+  register: sonarqube_health
+  retries: "{{ service_wait_retries }}"
+  delay: "{{ service_wait_delay }}"
+  until: sonarqube_health.status in [200, 302, 401]
+
+- name: Show SonarQube access details
+  ansible.builtin.debug:
+    msg:
+      - "SonarQube URL: {{ service_url | default('http://' ~ ansible_host ~ ':' ~ sonarqube_port) }}"
+      - "Default first login is admin/admin unless changed through the UI."

@@ -1,0 +1,19 @@
+---
+common_timezone: UTC
+common_packages:
+  - acl
+  - ca-certificates
+  - curl
+  - gnupg
+  - jq
+  - lsb-release
+  - python3
+  - python3-apt
+  - tar
+  - unzip
+  - wget
+
+java_package: openjdk-17-jdk
+
+service_wait_delay: 10
+service_wait_retries: 30
