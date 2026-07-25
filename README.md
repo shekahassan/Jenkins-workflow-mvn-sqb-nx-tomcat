@@ -10,8 +10,8 @@ Terraform creates the AWS infrastructure in a dedicated VPC and writes a dynamic
 
 ## Architecture
 
-- Region: `us-east-1`
-- SSH key pair: `rancher0529`
+- Region: `us-east-2`
+- SSH key pair: `maven-keypair`
 - Dedicated VPC with public subnet
 - Security groups:
   - SSH `22`
@@ -44,7 +44,7 @@ ansible-playbook playbook.yml
 If a previous run created a root-owned Ansible temp directory and you see an unreachable error for `/tmp/.ansible/tmp` or `/tmp/ansible-ubuntu/tmp`, rerun after pulling the latest code and regenerating the inventory. The project now uses `/home/ubuntu/.ansible/tmp`. If the host still has a locked temp path, remove the old directories once:
 
 ```bash
-ssh -i ~/.ssh/rancher0529.pem ubuntu@SERVER_PUBLIC_IP 'sudo rm -rf /tmp/.ansible /tmp/ansible-ubuntu && mkdir -p /home/ubuntu/.ansible/tmp && chmod 700 /home/ubuntu/.ansible /home/ubuntu/.ansible/tmp'
+ssh -i ~/.ssh/maven-keypair.pem ubuntu@SERVER_PUBLIC_IP 'sudo rm -rf /tmp/.ansible /tmp/ansible-ubuntu && mkdir -p /home/ubuntu/.ansible/tmp && chmod 700 /home/ubuntu/.ansible /home/ubuntu/.ansible/tmp'
 ```
 
 ## Default URLs

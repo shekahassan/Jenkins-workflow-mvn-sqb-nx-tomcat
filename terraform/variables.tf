@@ -1,7 +1,7 @@
 variable "project_name" {
   description = "Project name prefix for AWS resources."
   type        = string
-  default     = "liontech-devops-tools"
+  default     = "sheka-devops-tools"
 }
 
 variable "environment" {
@@ -13,19 +13,19 @@ variable "environment" {
 variable "aws_region" {
   description = "AWS region for deployment."
   type        = string
-  default     = "us-east-1"
+  default     = "us-east-2"
 }
 
 variable "key_name" {
   description = "Existing AWS EC2 key pair name."
   type        = string
-  default     = "rancher0529"
+  default     = "maven-keypair"
 }
 
 variable "ssh_private_key_path" {
   description = "Private key path written into generated Ansible inventory."
   type        = string
-  default     = "~/.ssh/rancher0529.pem"
+  default     = "~/.ssh/maven-keypair.pem"
 }
 
 variable "vpc_cidr" {
