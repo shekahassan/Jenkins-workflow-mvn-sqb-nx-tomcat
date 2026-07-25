@@ -20,6 +20,22 @@ pipeline {
 
     stages {
 
+        stage('Clone Repository') {
+
+            steps {
+
+                echo "Cloning repository from GitHub..."
+
+                git branch: 'main', 
+                    url: 'https://github.com/shekahassan/Jenkins-workflow-mvn-sqb-nx-tomcat.git',
+                    credentialsId: 'github-credentials'
+
+                echo "Repository cloned successfully"
+
+            }
+
+        }
+
         stage('Checkout Source') {
 
             steps {
