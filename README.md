@@ -368,6 +368,173 @@ mvn clean package -DskipTests
 # The WAR file is created at: target/employee-app-1.0.0.war
 ```
 
+## Jenkins Pipeline
+
+This project includes a comprehensive `Jenkinsfile` that automates the entire CI/CD workflow:
+
+### Pipeline Stages
+
+1. **Checkout Source** - Clone the Git repository
+2. **Build** - Compile the Java application (`mvn clean compile`)
+3. **Run Unit Tests** - Execute unit tests and publish results (`mvn test`)
+4. **Package Application** - Create the deployable WAR file (`mvn package`)
+5. **SonarQube Analysis** - Run code quality and security analysis (`mvn sonar:sonar`)
+6. **Quality Gate** - Wait for SonarQube quality gate approval (timeout: 10 minutes)
+7. **Publish Artifact** - Deploy the WAR to Nexus repository (`mvn deploy`)
+8. **Deploy to Tomcat** - Deploy the WAR to Tomcat application server
+
+### Post-Build Actions
+
+- **Success**: Echo success message
+- **Failure**: Echo failure message
+- **Always**: Archive WAR artifacts and clean workspace
+
+### Jenkins Setup
+
+#### Prerequisites
+
+1. **Jenkins Server** with the following plugins installed:
+   - Pipeline
+   - Git
+   - Maven Integration
+   - JUnit
+   - SonarQube Scanner
+   - Deploy to container
+   - Tomcat plugin
+
+2. **Jenkins Global Configuration**
+
+   Configure the following tools in Jenkins system configuration:
+   
+   - **JDK 17**: Manage Jenkins → Tools → JDK installations
+     - Name: `JDK17`
+     - JAVA_HOME: `/usr/lib/jvm/java-17-openjdk`
+   
+   - **Maven 3.9**: Manage Jenkins → Tools → Maven installations
+     - Name: `Maven-3.9`
+     - MAVEN_HOME: `/opt/maven-3.9`
+
+3. **SonarQube Integration**
+
+   Configure SonarQube server in Jenkins:
+   - Manage Jenkins → Configure System → SonarQube servers
+   - Name: `SonarQube`
+   - Server URL: `http://<SONARQUBE_IP>:9000`
+   - Server authentication token: (generate from SonarQube)
+
+4. **Tomcat Credentials**
+
+   Add Tomcat manager credentials to Jenkins:
+   - Manage Jenkins → Manage Credentials → System → Global credentials
+   - Add credentials of type "Username with password"
+   - Username: `admin` (or your Tomcat manager user)
+   - Password: (configured in ansible/group_vars/tomcat_maven.yml)
+   - ID: `tomcat-creds`
+
+5. **Maven Settings**
+
+   Configure Nexus repository credentials in Jenkins:
+   - Create/edit `~/.m2/settings.xml` on Jenkins server
+   - Add server credentials for Nexus repository
+
+#### Pipeline Configuration
+
+1. Create a new Pipeline job in Jenkins
+2. Under "Pipeline" section, choose "Pipeline script from SCM"
+3. Set SCM to Git:
+   - Repository URL: `https://github.com/shekahassan/Jenkins-workflow-mvn-sqb-nx-tomcat.git`
+   - Branch: `*/main`
+   - Script Path: `Jenkinsfile`
+
+4. Save and build
+
+#### Environment Variables
+
+Update the Jenkinsfile with your actual environment values:
+
+```groovy
+environment {
+    SONARQUBE = 'SonarQube'              # Name configured in Jenkins
+    TOMCAT_CREDENTIALS = 'tomcat-creds'  # Jenkins credential ID
+}
+```
+
+And update the Tomcat URL in the Deploy stage:
+
+```groovy
+url: 'http://<TOMCAT-SERVER>:8080'  # Replace with actual Tomcat server IP
+```
+
+### Running the Pipeline
+
+1. **Manual Trigger**: Click "Build Now" in the Jenkins UI
+2. **Webhook Trigger**: Configure GitHub webhook to trigger on push
+3. **Scheduled Build**: Set up cron expression for periodic builds
+
+### Pipeline Logs
+
+View real-time logs in Jenkins UI:
+- Click on the build number
+- Select "Console Output"
+- Scroll to see each stage's progress
+
+### Troubleshooting Pipeline Issues
+
+**Build Fails at Maven Compile**:
+```bash
+# Check Java is installed and version is correct
+java -version
+# Expected: Java 17 or higher
+
+# Check Maven is installed
+mvn -version
+# Expected: Maven 3.9+
+```
+
+**SonarQube Quality Gate Fails**:
+- Check SonarQube server is running: `curl http://<SONARQUBE_IP>:9000/api/system/health`
+- Verify SonarQube configuration in Jenkinsfile
+- Check project key matches in SonarQube dashboard
+
+**Deploy to Tomcat Fails**:
+- Verify Tomcat server is running: `curl http://<TOMCAT_IP>:8080`
+- Check Tomcat credentials are correct in Jenkins
+- Ensure Jenkins server has network access to Tomcat server
+- Check Tomcat manager application is deployed
+
+### Integration with DevOps Tools
+
+The pipeline integrates with all three DevOps tools:
+
+**Nexus Integration**:
+- Publishes built artifacts to Nexus repository
+- Downloads dependencies from Nexus repository
+- Configured in `pom.xml` with distributionManagement section
+
+**SonarQube Integration**:
+- Analyzes code quality and security
+- Publishes results to SonarQube dashboard
+- Enforces quality gates before deployment
+
+**Tomcat Integration**:
+- Deploys the built WAR to Tomcat
+- Automatically restarts the application
+- Makes it accessible at `http://<TOMCAT_IP>:8080/employee-app`
+
+### Deploying the Employee Application Locally
+
+```bash
+mvn clean package
+
+# Run tests
+mvn test
+
+# Create deployable WAR
+mvn clean package -DskipTests
+
+# The WAR file is created at: target/employee-app-1.0.0.war
+```
+
 ### Deploying to Nexus
 
 ```bash
