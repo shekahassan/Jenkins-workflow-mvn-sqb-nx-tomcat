@@ -1,0 +1,544 @@
+---
+- name: Install and configure Jenkins DevOps controller
+  hosts: jenkins
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Wait for SSH to become available
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+
+    - name: Require a strong Jenkins admin password
+      ansible.builtin.assert:
+        that:
+          - jenkins_admin_password is defined
+          - jenkins_admin_password | length >= 12
+        fail_msg: "Set JENKINS_ADMIN_PASSWORD or pass -e jenkins_admin_password=... with at least 12 characters."
+      no_log: true
+
+    - name: Install base package prerequisites
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - fontconfig
+          - git
+          - gnupg
+          - jq
+          - lsb-release
+          - python3-pip
+          - software-properties-common
+          - unzip
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Create APT keyring directory
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Get Debian architecture
+      ansible.builtin.command:
+        cmd: dpkg --print-architecture
+      register: deb_arch
+      changed_when: false
+
+  tasks:
+    - name: Download Docker GPG key
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: "0644"
+
+    - name: Remove old Docker APT repository and keyring remnants
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/apt/sources.list.d/docker.list
+        - /etc/apt/keyrings/docker.gpg
+        - /tmp/docker.asc
+
+    - name: Configure Docker APT repository
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/docker.sources
+        mode: "0644"
+        content: |
+          Types: deb
+          URIs: https://download.docker.com/linux/ubuntu
+          Suites: {{ ansible_distribution_release }}
+          Components: stable
+          Architectures: {{ deb_arch.stdout }}
+          Signed-By: /etc/apt/keyrings/docker.asc
+      register: docker_repo
+
+    - name: Remove Jenkins APT repository and keyring remnants
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/apt/sources.list.d/jenkins.list
+        - /etc/apt/keyrings/jenkins-keyring.asc
+        - /usr/share/keyrings/jenkins-keyring.gpg
+        - /tmp/jenkins.asc
+
+    - name: Download HashiCorp GPG key
+      ansible.builtin.get_url:
+        url: https://apt.releases.hashicorp.com/gpg
+        dest: /tmp/hashicorp.asc
+        mode: "0644"
+      register: hashicorp_gpg_key
+
+    - name: Check HashiCorp keyring
+      ansible.builtin.stat:
+        path: /etc/apt/keyrings/hashicorp.gpg
+      register: hashicorp_keyring
+
+    - name: Install HashiCorp GPG keyring
+      ansible.builtin.command:
+        cmd: gpg --dearmor --yes -o /etc/apt/keyrings/hashicorp.gpg /tmp/hashicorp.asc
+      when: hashicorp_gpg_key.changed or not hashicorp_keyring.stat.exists
+
+    - name: Configure HashiCorp APT repository
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/hashicorp.list
+        mode: "0644"
+        content: |
+          deb [arch={{ deb_arch.stdout }} signed-by=/etc/apt/keyrings/hashicorp.gpg] https://apt.releases.hashicorp.com {{ ansible_distribution_release }} main
+      register: hashicorp_repo
+
+    - name: Remove Helm APT repository and keyring remnants
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/apt/sources.list.d/helm-stable-debian.list
+        - /usr/share/keyrings/helm.gpg
+        - /tmp/helm.asc
+
+    - name: Refresh APT cache after repository configuration
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 0
+
+    - name: Install Docker, Terraform, Ansible, and Java packages
+      ansible.builtin.apt:
+        name:
+          - ansible
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-ce
+          - docker-ce-cli
+          - docker-compose-plugin
+          - openjdk-21-jre
+          - terraform
+        state: present
+        force_apt_get: true
+        lock_timeout: 300
+      register: core_package_install
+      retries: 5
+      delay: 30
+      until: core_package_install is succeeded
+
+    - name: Remove Jenkins Debian package if present
+      ansible.builtin.apt:
+        name: jenkins
+        state: absent
+        purge: false
+        force_apt_get: true
+        lock_timeout: 300
+      register: jenkins_deb_package_absent
+      retries: 3
+      delay: 20
+      until: jenkins_deb_package_absent is succeeded
+
+    - name: Verify Java 21 runtime exists
+      ansible.builtin.stat:
+        path: "{{ jenkins_java_home }}/bin/java"
+      register: jenkins_java_runtime
+
+    - name: Require Java 21 runtime for Jenkins
+      ansible.builtin.assert:
+        that:
+          - jenkins_java_runtime.stat.exists
+        fail_msg: "Java 21 runtime was not found at {{ jenkins_java_home }}/bin/java. Jenkins cannot start without a supported Java runtime."
+
+    - name: Read current system Java alternative
+      ansible.builtin.command:
+        cmd: readlink -f /usr/bin/java
+      register: current_java_alternative
+      changed_when: false
+
+    - name: Set Java 21 as the default runtime
+      ansible.builtin.command:
+        argv:
+          - update-alternatives
+          - --set
+          - java
+          - "{{ jenkins_java_home }}/bin/java"
+      when: current_java_alternative.stdout != jenkins_java_home + "/bin/java"
+
+    - name: Create Jenkins group
+      ansible.builtin.group:
+        name: jenkins
+        system: true
+        state: present
+
+    - name: Create Jenkins user
+      ansible.builtin.user:
+        name: jenkins
+        group: jenkins
+        home: "{{ jenkins_home }}"
+        shell: /usr/sbin/nologin
+        system: true
+        create_home: true
+        state: present
+
+    - name: Create Jenkins runtime directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - path: "{{ jenkins_install_dir }}"
+          owner: root
+          group: root
+          mode: "0755"
+        - path: "{{ jenkins_home }}"
+          owner: jenkins
+          group: jenkins
+          mode: "0750"
+        - path: "{{ jenkins_cache_dir }}"
+          owner: jenkins
+          group: jenkins
+          mode: "0750"
+        - path: "{{ jenkins_log_dir }}"
+          owner: jenkins
+          group: jenkins
+          mode: "0750"
+
+    - name: Download Jenkins WAR
+      block:
+        - name: Download Jenkins WAR from artifact repository
+          ansible.builtin.get_url:
+            url: "{{ jenkins_war_url }}"
+            dest: "{{ jenkins_war_path }}"
+            owner: root
+            group: root
+            mode: "0644"
+            timeout: 60
+          register: jenkins_war_download
+          retries: 5
+          delay: 30
+          until: jenkins_war_download is succeeded
+          notify: Restart Jenkins
+      rescue:
+        - name: Download Jenkins WAR from update center fallback
+          ansible.builtin.get_url:
+            url: "{{ jenkins_war_fallback_url }}"
+            dest: "{{ jenkins_war_path }}"
+            owner: root
+            group: root
+            mode: "0644"
+            timeout: 60
+          register: jenkins_war_fallback_download
+          retries: 5
+          delay: 30
+          until: jenkins_war_fallback_download is succeeded
+          notify: Restart Jenkins
+
+    - name: Check Helm version
+      ansible.builtin.command:
+        cmd: /usr/local/bin/helm version --short --client
+      register: helm_version_check
+      failed_when: false
+      changed_when: false
+
+    - name: Download Helm binary archive
+      ansible.builtin.get_url:
+        url: "https://get.helm.sh/helm-{{ helm_version }}-linux-amd64.tar.gz"
+        dest: "/tmp/helm-{{ helm_version }}-linux-amd64.tar.gz"
+        mode: "0644"
+      when: helm_version_check.rc != 0 or helm_version not in helm_version_check.stdout
+
+    - name: Extract Helm binary archive
+      ansible.builtin.unarchive:
+        src: "/tmp/helm-{{ helm_version }}-linux-amd64.tar.gz"
+        dest: /tmp
+        remote_src: true
+      when: helm_version_check.rc != 0 or helm_version not in helm_version_check.stdout
+
+    - name: Install Helm binary
+      ansible.builtin.copy:
+        src: /tmp/linux-amd64/helm
+        dest: /usr/local/bin/helm
+        owner: root
+        group: root
+        mode: "0755"
+        remote_src: true
+      when: helm_version_check.rc != 0 or helm_version not in helm_version_check.stdout
+
+    - name: Install kubectl
+      ansible.builtin.get_url:
+        url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
+        dest: /usr/local/bin/kubectl
+        mode: "0755"
+        force: false
+
+    - name: Check AWS CLI
+      ansible.builtin.command:
+        cmd: aws --version
+      register: aws_cli_check
+      failed_when: false
+      changed_when: false
+
+    - name: Download AWS CLI v2 installer
+      ansible.builtin.get_url:
+        url: https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip
+        dest: /tmp/awscliv2.zip
+        mode: "0644"
+      when: aws_cli_check.rc != 0 or aws_cli_force_reinstall | bool
+
+    - name: Extract AWS CLI v2 installer
+      ansible.builtin.unarchive:
+        src: /tmp/awscliv2.zip
+        dest: /tmp
+        remote_src: true
+      when: aws_cli_check.rc != 0 or aws_cli_force_reinstall | bool
+
+    - name: Install or update AWS CLI v2
+      ansible.builtin.command:
+        cmd: /tmp/aws/install --update
+      when: aws_cli_check.rc != 0 or aws_cli_force_reinstall | bool
+
+    - name: Enable and start Docker
+      ansible.builtin.systemd:
+        name: docker
+        enabled: true
+        state: started
+
+    - name: Add users to docker group
+      ansible.builtin.user:
+        name: "{{ item }}"
+        groups: docker
+        append: true
+      loop: "{{ docker_users }}"
+
+    - name: Stop Jenkins before first configuration
+      ansible.builtin.systemd:
+        name: jenkins
+        state: stopped
+      failed_when: false
+
+    - name: Remove legacy Jenkins packaged service override
+      ansible.builtin.file:
+        path: /etc/systemd/system/jenkins.service.d/override.conf
+        state: absent
+
+    - name: Configure Jenkins systemd service
+      ansible.builtin.template:
+        src: jenkins.service.j2
+        dest: /etc/systemd/system/jenkins.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart Jenkins
+
+    - name: Create Jenkins init directory
+      ansible.builtin.file:
+        path: "{{ jenkins_home }}/init.groovy.d"
+        state: directory
+        owner: jenkins
+        group: jenkins
+        mode: "0750"
+
+    - name: Configure Jenkins security bootstrap script
+      ansible.builtin.template:
+        src: 01-basic-security.groovy.j2
+        dest: "{{ jenkins_home }}/init.groovy.d/01-basic-security.groovy"
+        owner: jenkins
+        group: jenkins
+        mode: "0600"
+      no_log: true
+      notify: Restart Jenkins
+
+    - name: Ensure Jenkins is enabled and started
+      block:
+        - name: Start Jenkins service
+          ansible.builtin.systemd:
+            name: jenkins
+            enabled: true
+            state: started
+            daemon_reload: true
+      rescue:
+        - name: Read Java version after Jenkins startup failure
+          ansible.builtin.command:
+            cmd: java -version
+          register: jenkins_failure_java_version
+          changed_when: false
+          failed_when: false
+
+        - name: Read Jenkins service status after startup failure
+          ansible.builtin.command:
+            cmd: systemctl status jenkins.service --no-pager -l
+          register: jenkins_failure_status
+          changed_when: false
+          failed_when: false
+
+        - name: Read Jenkins journal after startup failure
+          ansible.builtin.command:
+            cmd: journalctl -u jenkins.service --no-pager -n 120
+          register: jenkins_failure_journal
+          changed_when: false
+          failed_when: false
+
+        - name: Fail with Jenkins startup diagnostics
+          ansible.builtin.fail:
+            msg: |
+              Jenkins failed to start.
+
+              Java version:
+              {{ jenkins_failure_java_version.stderr | default(jenkins_failure_java_version.stdout, true) }}
+
+              systemctl status jenkins.service:
+              {{ jenkins_failure_status.stdout | default(jenkins_failure_status.stderr, true) }}
+
+              journalctl -u jenkins.service -n 120:
+              {{ jenkins_failure_journal.stdout | default(jenkins_failure_journal.stderr, true) }}
+
+    - name: Flush Jenkins restart handlers
+      ansible.builtin.meta: flush_handlers
+
+    - name: Wait for Jenkins HTTP endpoint
+      ansible.builtin.uri:
+        url: "{{ jenkins_controller_url }}/login"
+        status_code:
+          - 200
+          - 403
+        timeout: 10
+      register: jenkins_http
+      retries: 30
+      delay: 10
+      until: jenkins_http.status in [200, 403]
+
+    - name: Remove Jenkins bootstrap script containing admin password
+      ansible.builtin.file:
+        path: "{{ jenkins_home }}/init.groovy.d/01-basic-security.groovy"
+        state: absent
+
+    - name: Remove legacy Jenkins bootstrap marker
+      ansible.builtin.file:
+        path: "{{ jenkins_home }}/.codex-bootstrap-complete"
+        state: absent
+
+    - name: Download Jenkins CLI jar
+      ansible.builtin.get_url:
+        url: "{{ jenkins_controller_url }}/jnlpJars/jenkins-cli.jar"
+        dest: "{{ jenkins_cli_jar }}"
+        mode: "0644"
+
+    - name: Manage Jenkins plugins with CLI
+      block:
+        - name: Write Jenkins CLI auth file
+          ansible.builtin.copy:
+            dest: /root/.jenkins-cli-auth
+            content: "{{ jenkins_admin_user }}:{{ jenkins_admin_password }}"
+            owner: root
+            group: root
+            mode: "0600"
+          no_log: true
+
+        - name: Verify Jenkins CLI authentication
+          ansible.builtin.command:
+            argv:
+              - java
+              - -jar
+              - "{{ jenkins_cli_jar }}"
+              - -s
+              - "{{ jenkins_controller_url }}/"
+              - -auth
+              - "@/root/.jenkins-cli-auth"
+              - -http
+              - who-am-i
+          register: jenkins_cli_auth_check
+          changed_when: false
+          retries: 30
+          delay: 10
+          until: jenkins_cli_auth_check.rc == 0
+
+        - name: Read installed Jenkins plugins
+          ansible.builtin.command:
+            argv:
+              - java
+              - -jar
+              - "{{ jenkins_cli_jar }}"
+              - -s
+              - "{{ jenkins_controller_url }}/"
+              - -auth
+              - "@/root/.jenkins-cli-auth"
+              - -http
+              - list-plugins
+          register: jenkins_installed_plugins_result
+          changed_when: false
+          retries: 12
+          delay: 10
+          until: jenkins_installed_plugins_result.rc == 0
+
+        - name: Parse installed Jenkins plugins
+          ansible.builtin.set_fact:
+            installed_jenkins_plugins: "{{ jenkins_installed_plugins_result.stdout_lines | map('regex_replace', '^([^ ]+).*', '\\1') | list }}"
+
+        - name: Calculate missing Jenkins plugins
+          ansible.builtin.set_fact:
+            missing_jenkins_plugins: "{{ jenkins_plugins | difference(installed_jenkins_plugins) }}"
+
+        - name: Install missing Jenkins plugins with dependencies
+          ansible.builtin.command:
+            argv: "{{ ['java', '-jar', jenkins_cli_jar, '-s', jenkins_controller_url + '/', '-auth', '@/root/.jenkins-cli-auth', '-http', 'install-plugin'] + missing_jenkins_plugins + ['-deploy'] }}"
+          register: jenkins_plugin_install_result
+          when: missing_jenkins_plugins | length > 0
+          retries: 3
+          delay: 20
+          until: jenkins_plugin_install_result.rc == 0
+          notify: Restart Jenkins
+      always:
+        - name: Remove Jenkins CLI auth file
+          ansible.builtin.file:
+            path: /root/.jenkins-cli-auth
+            state: absent
+
+    - name: Flush Jenkins plugin restart handler
+      ansible.builtin.meta: flush_handlers
+
+    - name: Wait for Jenkins after plugin installation
+      ansible.builtin.uri:
+        url: "{{ jenkins_controller_url }}/login"
+        status_code:
+          - 200
+          - 403
+        timeout: 10
+      register: jenkins_ready_after_plugins
+      retries: 30
+      delay: 10
+      until: jenkins_ready_after_plugins.status in [200, 403]
+
+    - name: Show Jenkins access details
+      ansible.builtin.debug:
+        msg:
+          - "Jenkins URL: {{ jenkins_public_url | default(jenkins_public_url_default) }}"
+          - "Jenkins admin user: {{ jenkins_admin_user }}"
+          - "Installed tooling: Docker, AWS CLI, kubectl, Helm, Terraform, Ansible"
+
+  handlers:
+    - name: Restart Jenkins
+      ansible.builtin.systemd:
+        name: jenkins
+        state: restarted
+        enabled: true
+        daemon_reload: true

@@ -1,0 +1,42 @@
+import jenkins.model.Jenkins
+import jenkins.model.JenkinsLocationConfiguration
+import hudson.security.HudsonPrivateSecurityRealm
+import hudson.security.FullControlOnceLoggedInAuthorizationStrategy
+import hudson.security.csrf.DefaultCrumbIssuer
+import hudson.model.User
+
+def instance = Jenkins.get()
+def adminUser = {{ jenkins_admin_user | to_json }}
+def adminPassword = {{ jenkins_admin_password | to_json }}
+def jenkinsUrl = {{ (jenkins_public_url | default(jenkins_public_url_default)) | to_json }}
+def adminEmail = {{ jenkins_admin_email | to_json }}
+
+def currentRealm = instance.getSecurityRealm()
+def realm = currentRealm instanceof HudsonPrivateSecurityRealm ? currentRealm : new HudsonPrivateSecurityRealm(false)
+
+def user = User.getById(adminUser, false)
+if (user == null || user.getProperty(HudsonPrivateSecurityRealm.Details.class) == null) {
+  realm.createAccount(adminUser, adminPassword)
+  user = User.getById(adminUser, false)
+}
+
+def passwordDetails = user?.getProperty(HudsonPrivateSecurityRealm.Details.class)
+if (passwordDetails != null) {
+  passwordDetails.updatePassword(adminPassword)
+  user.save()
+}
+instance.setSecurityRealm(realm)
+
+def strategy = new FullControlOnceLoggedInAuthorizationStrategy()
+strategy.setAllowAnonymousRead(false)
+instance.setAuthorizationStrategy(strategy)
+
+instance.setCrumbIssuer(new DefaultCrumbIssuer(true))
+instance.setNumExecutors({{ jenkins_num_executors }})
+
+def location = JenkinsLocationConfiguration.get()
+location.setUrl(jenkinsUrl)
+location.setAdminAddress(adminEmail)
+location.save()
+
+instance.save()

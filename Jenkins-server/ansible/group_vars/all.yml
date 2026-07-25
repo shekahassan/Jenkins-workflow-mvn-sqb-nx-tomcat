@@ -1,0 +1,114 @@
+---
+jenkins_http_port: 8080
+jenkins_controller_url: "http://127.0.0.1:{{ jenkins_http_port }}"
+jenkins_public_url_default: "http://{{ ansible_host }}:{{ jenkins_http_port }}/"
+jenkins_java_home: /usr/lib/jvm/java-21-openjdk-amd64
+jenkins_version: "2.555.3"
+jenkins_home: /var/lib/jenkins
+jenkins_cache_dir: /var/cache/jenkins
+jenkins_log_dir: /var/log/jenkins
+jenkins_install_dir: /opt/jenkins
+jenkins_war_path: "{{ jenkins_install_dir }}/jenkins.war"
+jenkins_war_url: "https://get.jenkins.io/war-stable/{{ jenkins_version }}/jenkins.war"
+jenkins_war_fallback_url: "https://mirrors.jenkins.io/war-stable/{{ jenkins_version }}/jenkins.war"
+jenkins_admin_user: admin
+jenkins_admin_password: "{{ lookup('ansible.builtin.env', 'JENKINS_ADMIN_PASSWORD') | default('', true) }}"
+jenkins_admin_email: "admin@example.com"
+jenkins_num_executors: 2
+jenkins_cli_jar: /tmp/jenkins-cli.jar
+
+jenkins_java_opts:
+  - "-Djava.awt.headless=true"
+  - "-Djenkins.install.runSetupWizard=false"
+
+docker_users:
+  - ubuntu
+  - jenkins
+
+kubectl_version: "v1.30.6"
+helm_version: "v3.15.4"
+aws_cli_force_reinstall: false
+
+jenkins_plugins:
+  - antisamy-markup-formatter
+  - audit-trail
+  - ansible
+  - aws-credentials
+  - amazon-ecr
+  - bitbucket
+  - blueocean
+  - bootstrap5-api
+  - branch-api
+  - build-timeout
+  - cloudbees-folder
+  - command-launcher
+  - configuration-as-code
+  - copyartifact
+  - credentials
+  - credentials-binding
+  - docker-build-step
+  - docker-plugin
+  - docker-workflow
+  - durable-task
+  - ec2
+  - email-ext
+  - git
+  - git-client
+  - github
+  - github-api
+  - github-branch-source
+  - gitlab-plugin
+  - gradle
+  - htmlpublisher
+  - jacoco
+  - job-dsl
+  - junit
+  - kubernetes
+  - kubernetes-cli
+  - kubernetes-credentials
+  - kubernetes-credentials-provider
+  - ldap
+  - lockable-resources
+  - mailer
+  - matrix-auth
+  - pam-auth
+  - parameterized-trigger
+  - pipeline-aws
+  - pipeline-build-step
+  - pipeline-github-lib
+  - pipeline-graph-view
+  - pipeline-input-step
+  - pipeline-milestone-step
+  - pipeline-model-definition
+  - pipeline-stage-step
+  - pipeline-stage-view
+  - pipeline-utility-steps
+  - plain-credentials
+  - prometheus
+  - role-strategy
+  - scm-api
+  - slack
+  - sonar
+  - ssh-agent
+  - ssh-credentials
+  - ssh-slaves
+  - ssh-steps
+  - structs
+  - terraform
+  - thinBackup
+  - timestamper
+  - token-macro
+  - trilead-api
+  - variant
+  - warnings-ng
+  - workflow-aggregator
+  - workflow-api
+  - workflow-basic-steps
+  - workflow-cps
+  - workflow-durable-task-step
+  - workflow-job
+  - workflow-multibranch
+  - workflow-scm-step
+  - workflow-step-api
+  - workflow-support
+  - ws-cleanup

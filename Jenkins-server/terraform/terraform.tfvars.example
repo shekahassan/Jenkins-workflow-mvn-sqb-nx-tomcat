@@ -1,0 +1,11 @@
+aws_region           = "us-east-1"
+key_name             = "rancher0529"
+ssh_private_key_path = "~/.ssh/rancher0529.pem"
+instance_type        = "c7i-flex.large"
+
+# Restrict these to your trusted public IP/CIDR before using in production.
+ssh_allowed_cidr     = "0.0.0.0/0"
+jenkins_allowed_cidr = "0.0.0.0/0"
+
+# Attach only the policies Jenkins jobs truly need.
+additional_instance_policy_arns = []

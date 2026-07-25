@@ -1,0 +1,24 @@
+[Unit]
+Description=Jenkins Controller
+Documentation=https://www.jenkins.io/doc/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=jenkins
+Group=jenkins
+WorkingDirectory={{ jenkins_home }}
+Environment="JAVA_HOME={{ jenkins_java_home }}"
+Environment="JENKINS_HOME={{ jenkins_home }}"
+Environment="PATH={{ jenkins_java_home }}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="JAVA_OPTS={{ jenkins_java_opts | join(' ') }}"
+ExecStart={{ jenkins_java_home }}/bin/java {{ jenkins_java_opts | join(' ') }} -jar {{ jenkins_war_path }} --httpPort={{ jenkins_http_port }} --webroot={{ jenkins_cache_dir }}/war
+Restart=on-failure
+RestartSec=10
+SuccessExitStatus=143
+TimeoutStartSec=240
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
