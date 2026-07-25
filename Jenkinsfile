@@ -6,7 +6,7 @@ pipeline {
 
         jdk 'JDK17'
 
-        maven 'Maven-3.9'
+        maven 'Maven-3.9.6'
 
     }
 
@@ -27,7 +27,7 @@ pipeline {
                 echo "Cloning repository from GitHub..."
 
                 git branch: 'main', 
-                    url: 'https://github.com/shekahassan/Jenkins-workflow-mvn-sqb-nx-tomcat.git',
+                    git 'https://github.com/shekahassan/Jenkins-workflow-mvn-sqb-nx-tomcat.git'
                     credentialsId: 'github-credentials'
 
                 echo "Repository cloned successfully"
@@ -136,7 +136,7 @@ pipeline {
 
                         path: '',
 
-                        url: 'http://<TOMCAT-SERVER>:8080'
+                        url: 'http://3.15.141.48:8080/'
 
                     )
 
