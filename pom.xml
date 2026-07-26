@@ -75,14 +75,14 @@
 	<distributionManagement>
 	    <repository>
 	      <id>nexus</id>
-	      <name>LION TECH ACADEMY Releases Nexus Repository</name>
-	      <url> http://44.213.99.118:8081/repository/release/</url>
+	      <name>Releases Nexus Repository</name>
+	      <url>http://18.119.134.146:8081/repository/Release/</url>
 	    </repository>
 	    
 	    <snapshotRepository>
 	      <id>nexus</id>
-	      <name>LION TECH ACADEMY Snapshot Nexus Repository </name>
-	      <url>http://44.213.99.118:8081/repository/snapshot/</url>
+	      <name>Snapshot Nexus Repository </name>
+	      <url>http://18.119.134.146:8081/repository/Snapshot/</url>
 	    </snapshotRepository>
 	    
 	</distributionManagement>
