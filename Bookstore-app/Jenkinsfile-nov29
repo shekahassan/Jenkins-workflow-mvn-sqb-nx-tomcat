@@ -42,7 +42,7 @@ pipeline{
     } 
     stage('8deploy2prod'){
       steps{
-       deploy adapters: [tomcat9(alternativeDeploymentContext: '', path: '', url: 'http://100.60.78.107:8080/')], contextPath: 'sheka', war: 'target/*war'
+       deploy adapters: [tomcat9(alternativeDeploymentContext: '', path: '', url: 'http://3.15.141.48:8080/')], contextPath: 'sheka', war: 'target/*war'
       }
     }
 }
