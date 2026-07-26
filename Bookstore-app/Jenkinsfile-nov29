@@ -46,6 +46,10 @@ pipeline{
       }
     }
 }
+
+
+
+/*
   post{
     always{
       emailext body: '''Hey guys
@@ -73,3 +77,4 @@ brice-bookstore
     }
   } 
 }
+*/
