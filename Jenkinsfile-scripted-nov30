@@ -1,0 +1,68 @@
+node{
+  def mavenHome = tool name: 'maven3.9.8'
+  stage('1cloneCode'){
+    git branch: 'nov29', url: 'https://github.com/Lion-Technology-Solutions/brice-bookstore-online-library-web-app.git'
+  }
+  stage('2Test&Build'){
+    sh "${mavenHome}/bin/mvn install"
+    sh "${mavenHome}/bin/mvn test"
+    sh "${mavenHome}/bin/mvn validate"
+    sh "${mavenHome}/bin/mvn clean package"
+    //bat "${mavenHome}/bin/mvn clean package"
+  }
+  stage('3codeQuality'){
+    sh "${mavenHome}/bin/mvn  sonar:sonar"
+  }
+  stage('4uploadArtifacts'){
+    //sh "${mavenHome}/bin/mvn deploy"
+    //http://52.53.227.31:8191/brice-bookstore/repository/tesla-fe-snapshots/
+    //http://52.53.227.31:8191/brice-bookstore/repository/tesla-fe-releases/
+    // vi pom.xml and added repository details   
+    // vi setting.xml and add AUTHENTICATION details  
+  } 
+  stage('deploy2dev'){
+    sh "echo 'deploy to dev'  "
+    deploy adapters: [tomcat9(alternativeDeploymentContext: '', credentialsId: 'TOMCAT-DEPLOYER', path: '', url: 'http://35.182.68.230:8009/')], contextPath: 'dev', war: 'target/*.war'
+
+  }
+
+  stage('deploy2Test'){
+    sh "echo 'deploy to Test'  "
+    deploy adapters: [tomcat9(alternativeDeploymentContext: '', credentialsId: 'TOMCAT-DEPLOYER', path: '', url: 'http://35.182.68.230:8009/')], contextPath: 'test', war: 'target/*.war'
+
+  }
+
+  stage('5deploy2UAT'){
+    sh "echo 'deploy to UAT'  "
+    deploy adapters: [tomcat9(alternativeDeploymentContext: '', credentialsId: 'TOMCAT-DEPLOYER', path: '', url: 'http://35.182.68.230:8009/')], contextPath: 'UAT', war: 'target/*.war'
+
+  }
+  stage('6approvalGate'){
+    sh "echo 'ready for review' "
+    timeout(time:5, unit:'DAYS') {
+    input message: 'Application ready for deployment, Please review and approve'
+      }
+  }
+  stage('7deploy2Prod'){
+    sh "sleep  50"
+    deploy adapters: [tomcat9(alternativeDeploymentContext: '', credentialsId: 'TOMCAT-DEPLOYER', path: '', url: 'http://35.182.68.230:8009/')], contextPath: 'PROD', war: 'target/*.war'
+  }
+
+  stage('congratulations') {
+
+    echo 'congratulations  Lion Tech Engineers'
+  }
+
+//   stage ('send MS Teams Notifications'){
+
+//    slackSend channel: 'https://automation--jenkins.slack.com/customize/icon', message: 'check build status'
+//   }
+            
+  stage('8emailNotification'){
+    emailext body: '''Hi All,
+
+Check Build status.
+
+Lion Techologies''', recipientProviders: [buildUser(), developers(), upstreamDevelopers(), brokenBuildSuspects(), brokenTestsSuspects(), contributor()], subject: 'build status', to: 'info@brice-bookstoreacademy.com'
+  }
+}
