@@ -18,6 +18,17 @@ pipeline{
         sh "mvn clean package"
       }
     }
+
+  stage('SonarQube Analysis') {
+            steps {
+                // Bypasses the prefix error by using the full group and artifact ID
+                sh 'mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar'
+            }
+        }
+
+
+
+
     stage('4CodeQuality'){       
       steps{
         sh "echo 'Perfoming CodeQualityAnalysis' "
