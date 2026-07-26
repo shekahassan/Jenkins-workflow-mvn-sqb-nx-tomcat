@@ -1,14 +1,14 @@
 pipeline{
   agent any 
   tools{
-    maven "maven"
+    maven "maven3.9.8"
   }  
   stages {
     stage('clone from github'){
       steps{
         sh "echo 'cloning the latest application version' "
          
-       git 'https://github.com/Lion-Technology-Solutions/liontech-online-library-web-app.git'
+       git branch: 'main', url: 'https://github.com/shekahassan/Jenkins-workflow-mvn-sqb-nx-tomcat.git'
       }
     }
     stage('3Test+Build'){
